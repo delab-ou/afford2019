@@ -21,8 +21,8 @@ aodv_gen.pml<br>
 pan_symm.c<br>
 replace.h<br>
 replace.c<br>
-state_print.h<br>
-state_print.c<br>
+print_state.h<br>
+print_state.c<br>
 
 3:<br>
 SPIN also generates 6 files <br>
