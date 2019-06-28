@@ -1,0 +1,152 @@
+inline unicast(uni){
+	if::
+		if::(len(c[uni])==CHAN_BUF)->c[uni]?tmp;
+			::else->skip;
+		fi;
+		c[uni]!pkts;
+		::skip;
+	fi;
+}
+inline checkSeqNum(_entry,_pkt){
+	if::(_entry.seq<_pkt.seq)->replaceEntry(_entry,_pkt);
+		::else->exist_table=1;
+	fi;
+}
+inline replaceEntry(_entry,_pkt){
+	_entry.dest=_pkt.src;_entry.seq=_pkt.seq;
+	_entry.hops=_pkt.hops;_entry.next=_pkt.sndr;
+}
+inline genInitialPacket(_type,_src,_dest,_sndr,_next,_hops,_seq){
+	pkts.type=_type;pkts.src=_src;
+	pkts.dest=_dest;pkts.sndr=_sndr;
+	pkts.next=_next;pkts.hops=_hops;
+	pkts.seq=_seq;
+}
+inline genForwardPacket(_sndr){
+	pkts.type=pktr.type;pkts.src=pktr.src;
+	pkts.dest=pktr.dest;pkts.sndr=_sndr;
+	pkts.seq=pktr.seq;pkts.next=pktr.next;
+	pkts.hops=pktr.hops+1;
+}
+proctype Src(byte id,d){
+	packet pkts,pktr,tmp;
+	bool found=false;
+	byte next,cnt,retry=0;
+	do::(retry<RETRY)->
+		d_step{
+			retry++;
+			genInitialPacket(0,id,d,id,0,1,retry);
+		}
+		broadcast();
+		do
+		::c[id-1]?pktr->
+			d_step{
+				if
+				::((pktr.type==1)&&(pktr.next==id)&&(pktr.dest==id))->
+					replaceEntry(tables[id-1].entries[0],pktr);
+					retry=3;found=true;
+					//break;
+				::else->skip;
+				fi;
+			}
+		::timeout->break;
+		od;
+	::(retry==RETRY)->break;
+	od;
+}
+proctype Dest(byte id){
+	packet pkts,pktr,tmp;
+	byte cnt=0;bool exist_table=0,forward=0;
+	do::c[id-1]?pktr->
+		d_step{
+			if
+			::((pktr.type==0)&&(pktr.src!=id))->forward=0;exist_table=0;
+				for(cnt:0 .. RT_LENGTH-1){
+					if
+					::(tables[id-1].entries[cnt].dest==pktr.src)->
+						checkSeqNum(tables[id-1].entries[cnt],pktr);break;
+					::(tables[id-1].entries[cnt].dest==0)->
+						replaceEntry(tables[id-1].entries[cnt],pktr);break;
+					::else ->skip;
+					fi;
+				};
+				if
+				::(exist_table==1)->skip;
+				::else->
+					if
+					::(pktr.dest==id)->genInitialPacket(1,id,pktr.src,id,pktr.sndr,1,pktr.seq);
+						forward=1;
+					::else->forward=0;
+					fi;
+				fi;
+			::else->skip;
+			fi;
+		}
+		atomic{
+			if
+			::(forward==1)->unicast(pkts.next-1);
+			::else->skip;
+			fi;
+		}
+		::timeout->break;
+	od;
+}
+proctype Node(byte id){
+	byte cnt,next;
+	packet pkts,pktr,tmp;bool exist_table,forward;
+	do::c[id-1]?pktr->
+		d_step{
+			if
+			::((pktr.type==0)&&(pktr.src!=id)&&(pktr.sndr!=id))->exist_table=0;
+				for(cnt:0 .. RT_LENGTH-1){
+					if
+					::(tables[id-1].entries[cnt].dest==pktr.src)->checkSeqNum(tables[id-1].entries[cnt],pktr);break;
+					::(tables[id-1].entries[cnt].dest==0)->replaceEntry(tables[id-1].entries[cnt],pktr);break;
+					::else ->skip;
+					fi;
+				};
+				if
+				::(exist_table==1)->pkts.next=255;skip;
+				::else->
+					if
+					::(pktr.dest==id)->genInitialPacket(1,id,pktr.src,id,pktr.sndr,1,pktr.seq);
+					::else->
+						if
+						::(pktr.hops<10)->genForwardPacket(id);
+						::else->pkts.next=255;
+						fi;
+					fi;
+				fi;
+			::((pktr.type==1)&&(pktr.src!=id)&&(pktr.sndr!=id))->exist_table=0;
+				if
+				::(pktr.next==id)->
+					for(cnt:0 .. RT_LENGTH-1){
+						if
+						::(tables[id-1].entries[cnt].dest==pktr.src)->checkSeqNum(tables[id-1].entries[cnt],pktr);break;
+						::(tables[id-1].entries[cnt].dest==0)->replaceEntry(tables[id-1].entries[cnt],pktr);break;
+						::else->skip;
+						fi;
+					};
+					genForwardPacket(id);
+					pkts.next=255;
+					for(cnt:0 .. RT_LENGTH-1){
+						if
+						::(tables[id-1].entries[cnt].dest==pktr.dest)->pkts.next=tables[id-1].entries[cnt].next;break;
+						::else->skip;
+						fi;
+					};
+				::else->pkts.next=255;
+				fi;
+			::else->pkts.next=255;
+			fi;
+		}
+		atomic{
+			if
+			::((pkts.next==0)&&(pkts.next!=255))->broadcast();
+			::((pkts.next>0)&&(pkts.next!=255))->unicast(pkts.next-1);
+			::else->skip;
+			fi;
+		}
+	::timeout->break;
+	od;
+}

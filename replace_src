@@ -1,0 +1,205 @@
+void moveQueue(int *perm, Q0* _now, Q0* _tmp){
+  //0:type,1:src,2:dest,3:sndr,4:next,5:hops,6:seq
+  (*moveq[(_now->_t-3)*(NODES-3)+(_tmp->_t-3)])(perm,_now,_tmp);
+}
+
+void moveDestQ(int *perm, Q2 *q){
+  if((3 <= q->contents[0].fld3) && (q->contents[0].fld3 <= NODES)){
+    q->contents[0].fld3=perm[q->contents[0].fld3-3];
+  }
+  if((3 <= q->contents[0].fld4) && (q->contents[0].fld4 <= NODES)){
+    q->contents[0].fld4=perm[q->contents[0].fld4-3];
+  }
+}
+void moveSrcQ(int *perm, Q1 *q){
+  if((3 <= q->contents[0].fld3) && (q->contents[0].fld3 <= NODES)){
+    q->contents[0].fld3=perm[q->contents[0].fld3-3];
+  }
+  if((3 <= q->contents[0].fld4) && (q->contents[0].fld4 <= NODES)){
+    q->contents[0].fld4=perm[q->contents[0].fld4-3];
+  }
+}
+
+void movePacketSenderAndNext(int *perm, struct packet *_tmp){
+  if((3 <= _tmp->sndr) && (_tmp->sndr <= NODES)){
+    _tmp->sndr=perm[_tmp->sndr-3];
+  }
+  if((3 <= _tmp->next) && (_tmp->next <= NODES)){
+    _tmp->next=perm[_tmp->next-3];
+  }
+}
+
+void movePacket(int *perm, struct packet *_now, struct packet *_tmp){
+  _tmp->type=_now->type;
+  _tmp->sndr=_now->sndr;
+  _tmp->next=_now->next;
+  _tmp->src=_now->src;
+  _tmp->dest=_now->dest;
+  _tmp->hops=_now->hops;
+  _tmp->seq=_now->seq;
+  movePacketSenderAndNext(perm,_tmp);
+}
+
+void movePackets(int *perm, P2 *_now, P2 *_tmp){
+  movePacket(perm,&(_now->pkts),&(_tmp->pkts));
+  movePacket(perm,&(_now->pktr),&(_tmp->pktr));
+}
+
+void moveSrcPackets(int *perm, P0* _tmp){
+  movePacketSenderAndNext(perm,&(_tmp->pktr));
+  movePacketSenderAndNext(perm,&(_tmp->pkts));
+}
+void moveDestPackets(int *perm, P1* _tmp){
+  movePacketSenderAndNext(perm,&(_tmp->pktr));
+  movePacketSenderAndNext(perm,&(_tmp->pkts));
+}
+
+
+void moveProcess(int *perm, P2 *_now, P2* _tmp){
+
+    _tmp->_p=_now->_p;
+    _tmp->exist_table=_now->exist_table;
+    _tmp->forward=_now->forward;
+    _tmp->next=_now->next;
+    _tmp->cnt=_now->cnt;
+    movePackets(perm,_now,_tmp);
+}
+
+int countEntries(struct table *t){
+  int i=0,j=0;
+  int count=0;
+  for(i=0;i<NODES;i++){
+    for(j=0;j<RT_LENGTH;j++){
+      if(t[i].entries[j].dest!=0){
+        count++;
+      }
+    }
+  }
+  return count;
+}
+void moveEntryNext(int *perm, struct entry *_now, struct entry *_tmp){
+  if((3 <= _tmp->next) && (_tmp->next <= NODES)){
+    _tmp->next=perm[_tmp->next-3];
+  }
+}
+void moveEntry(struct entry *_now, struct entry *_tmp){
+  _tmp->dest=_now->dest;
+  _tmp->next=_now->next;
+  _tmp->seq=_now->seq;
+  _tmp->hops=_now->hops;
+}
+void moveTable(int *perm, struct table *_now,struct table* _tmp){
+
+  int cnt=0;
+  for(;cnt<RT_LENGTH;cnt++){
+    moveEntry(&(_now->entries[cnt]),&(_tmp->entries[cnt]));
+    moveEntryNext(perm,&(_now->entries[cnt]),&(_tmp->entries[cnt]));
+  }
+}
+
+void moveSrcDestEntry(int *perm, struct entry *_e){
+  if((3 <= _e->next) && (_e->next <= NODES)){
+    _e->next=perm[_e->next-3];
+  }
+}
+void moveSrcDestTable(int *perm, struct table *t){
+
+  int cnt=0;
+  for(;cnt<RT_LENGTH;cnt++){
+    moveSrcDestEntry(perm,&(t->entries[cnt]));
+  }
+}
+void moveState(int *perm, struct State *_now,struct State *_tmp,int id,short *pos,short *qos){
+  //P2 *_nowP=((P2 *)(((unsigned char *)_now)+(int)proc_offset[perm[id-3]]));
+  //P2 *_tmpP=((P2 *)(((unsigned char *)_tmp)+(int)proc_offset[id]));
+  P2 *_nowP=((P2 *)(((unsigned char *)_now)+(int)pos[perm[id-3]]));
+  P2 *_tmpP=((P2 *)(((unsigned char *)_tmp)+(int)pos[id]));
+  struct table* _nowT=&(_now->tables[perm[id-3]-1]);
+  struct table* _tmpT=&(_tmp->tables[id-1]);
+  //Q0 *_nowQ=((Q0 *)(((unsigned char *)_now)+(int)q_offset[perm[id-3]-1]));
+  //Q0 *_tmpQ=((Q0 *)(((unsigned char *)_tmp)+(int)q_offset[id-1]));
+  Q0 *_nowQ=((Q0 *)(((unsigned char *)_now)+(int)qos[perm[id-3]-1]));
+  Q0 *_tmpQ=((Q0 *)(((unsigned char *)_tmp)+(int)qos[id-1]));
+  moveProcess(perm,_nowP,_tmpP);
+  moveTable(perm,_nowT,_tmpT);
+  moveQueue(perm,_nowQ,_tmpQ);
+}
+void replace(int *perm, struct State *_now, struct State* _tmp,short *pos, short *qos){
+  //a node i in state _tmp is assigned by a node perm[i-3] in a state _now
+  int cnt=3;
+  for(;cnt<=NODES;cnt++){
+    moveState(perm,_now,_tmp,cnt,pos,qos);
+  }
+  Q1 *_sQ=((Q1 *)(((unsigned char *)_tmp)+(int)qos[0]));
+  Q2 *_dQ=((Q2 *)(((unsigned char *)_tmp)+(int)qos[1]));
+  P0 *_sP=((P0 *)(((unsigned char *)_tmp)+(int)pos[1]));
+  P1 *_dP=((P1 *)(((unsigned char *)_tmp)+(int)pos[2]));
+  moveSrcPackets(perm,_sP);
+  moveDestPackets(perm,_dP);
+  moveSrcQ(perm,_sQ);
+  moveDestQ(perm,_dQ);
+  moveSrcDestTable(perm, &(_tmp->tables[0]));
+  moveSrcDestTable(perm, &(_tmp->tables[1]));
+}
+int isSameEntry(struct entry *_now, struct entry *_tmp){
+  if(
+      (_now->dest==_tmp->dest)&&
+      (_now->next==_tmp->next)&&
+      (_now->hops==_tmp->hops)&&
+      (_now->seq==_tmp->seq)){
+    return 1;
+  }
+  return 0;
+}
+int isSameTable(struct table *_now,struct table* _tmp){
+  int cnt=0;
+  for(cnt=0;cnt<RT_LENGTH;cnt++){
+    if(isSameEntry(&(_now->entries[cnt]),&(_tmp->entries[cnt]))==0){
+      return 0;
+    }
+  }
+  return 1;
+}
+int isSameTables(struct table *_now,struct table *_tmp){
+  int cnt=0;
+  for(cnt=0;cnt<NODES;cnt++){
+    if(isSameTable(&(_now[cnt]),&(_tmp[cnt]))==0){
+      return 0;
+    }
+  }
+  return 1;
+}
+
+void countTopologies(struct State *s){
+  int ce=countEntries(s->tables);
+  int cnt,cnt2;
+	int found=0;
+	for(cnt=0;cnt<entries[ce];cnt++){
+		if(isSameTables(s->tables,topo[ce][cnt])==1){
+			found=1;
+			break;
+		}
+	}
+	if(found==0){
+		entries[ce]++;
+		for(cnt=0;cnt<NODES;cnt++){
+			for(cnt2=0;cnt2<RT_LENGTH;cnt2++){
+				moveEntry(
+					&(s->tables[cnt].entries[cnt2]),
+					&(topo[ce][entries[ce]-1][cnt].entries[cnt2])
+				);
+			}
+		}
+	}
+}
+int isSameState(char* s1,char *s2, int size){
+  int cnt=0;
+  int ret=1;
+  for(;cnt<size;cnt++){
+    if(s1[cnt]!=s2[cnt]){
+      ret=0;
+      break;
+    }
+  }
+  return ret;
+}
