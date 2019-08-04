@@ -43,7 +43,7 @@ around: is the number of neighbor nodes at most when a node broadcasts a packet.
 rtlen: is the number of entries in a routing table.<br>
 retry: is how many time a source node tries to send a route request.<br>
 
-Parameters when we conduct experiments for AFFORD2019 are<br>
+Parameters when we conduct experiments are<br>
 nodes=N, around=1, rtlen=2, retry=1.<br>
 N is the number of nodes from 4 to 10.
 
